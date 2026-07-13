@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daftar Hadir UAS - Sync Spreadsheet</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #f4f7fc; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { max-width: 1300px; width: 100%; background: white; padding: 25px 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+        h1 { font-size: 26px; color: #1a2b4c; margin-top: 0; border-bottom: 3px solid #2a7de1; padding-bottom: 12px; display: flex; align-items: center; gap: 12px; }
+        h1 small { font-size: 15px; font-weight: 400; color: #555; margin-left: auto; }
+        .sync-status { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 30px; font-size: 13px; font-weight: 600; margin-bottom: 15px; }
+        .sync-status.online { background: #e6f7ed; color: #1f8b4c; }
+        .sync-status.offline { background: #fde8e8; color: #8f4a4a; }
+        .sync-status.syncing { background: #fff8e6; color: #b8860b; }
+        .sync-indicator { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+        .sync-status.online .sync-indicator { animation: none; }
+        .sync-status.syncing .sync-indicator { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .filter-area { display: flex; flex-wrap: wrap; gap: 20px 30px; background: #f8faff; padding: 18px 22px; border-radius: 14px; margin: 20px 0 25px 0; align-items: flex-end; border: 1px solid #e3ebf6; }
+        .filter-group { display: flex; flex-direction: column; gap: 5px; flex: 1 0 160px; }
+        .filter-group label { font-weight: 600; font-size: 13px; color: #1f3a5f; letter-spacing: 0.3px; }
+        .filter-group select, .filter-group input { padding: 8px 12px; border-radius: 30px; border: 1px solid #cbdae9; background: white; font-size: 14px; width: 100%; }
+        .filter-group input { background: #fafcff; }
+        .filter-group select:focus, .filter-group input:focus { outline: 2px solid #2a7de1; border-color: transparent; }
+        .filter-actions { display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+        .filter-actions button { background: #e2eaf5; border: none; padding: 8px 20px; border-radius: 30px; font-weight: 600; color: #1f3a5f; cursor: pointer; transition: 0.15s; white-space: nowrap; }
+        .filter-actions button:hover { background: #c7d8ec; }
+        .filter-actions button.primary { background: #2a7de1; color: white; }
+        .filter-actions button.primary:hover { background: #1a5fb0; }
+        .table-wrap { overflow-x: auto; border-radius: 14px; border: 1px solid #dfe8f2; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        thead { background: #1f3a5f; color: white; }
+        th { padding: 12px 12px; text-align: left; white-space: nowrap; }
+        td { padding: 10px 12px; border-bottom: 1px solid #e5edf6; vertical-align: middle; }
+        tr:hover { background: #f5f9ff; }
+        tr.synced { background: #e6f7ed !important; }
+        tr.sync-pending { background: #fff8e6 !important; }
+        .col-no { width: 50px; text-align: center; }
+        .col-nim { width: 150px; }
+        .col-nama { min-width: 180px; }
+        .col-kelas { width: 120px; }
+        .col-gender { width: 60px; text-align: center; }
+        .col-hadir { width: 130px; }
+        .col-catatan { min-width: 160px; }
+        select.status { padding: 5px 8px; border-radius: 20px; border: 1px solid #bccde0; background: white; font-size: 13px; width: 100%; }
+        input.catatan { width: 100%; padding: 5px 8px; border: 1px solid #bccde0; border-radius: 20px; font-size: 13px; background: #fafcff; }
+        input.catatan:focus, select.status:focus { outline: 2px solid #2a7de1; border-color: transparent; }
+        .footer-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; flex-wrap: wrap; gap: 15px; }
+        .info-badge { background: #eef3fa; padding: 8px 18px; border-radius: 30px; font-size: 14px; color: #1f3a5f; }
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn-group button { padding: 10px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.15s; }
+        .btn-export { background: #1f8b4c; color: white; }
+        .btn-export:hover { background: #15703d; }
+        .btn-sync { background: #2a7de1; color: white; }
+        .btn-sync:hover { background: #1a5fb0; }
+        .btn-sync:disabled { background: #a0c4e8; cursor: not-allowed; }
+        .btn-mark-all { background: #e2eaf5; color: #1f3a5f; }
+        .btn-mark-all:hover { background: #c7d8ec; }
+        .btn-reset { background: #f0e6e6; color: #8f4a4a; }
+        .btn-reset:hover { background: #e5d4d4; }
+        .message { margin-top: 15px; padding: 12px 18px; border-radius: 12px; background: #dff0fa; color: #1a3a5f; display: none; }
+        .message.show { display: block; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #6a7f9b; }
+        .empty-state span { font-size: 48px; display: block; margin-bottom: 10px; }
+        .auto-sync-toggle { display: flex; align-items: center; gap: 10px; background: #f8faff; padding: 10px 18px; border-radius: 30px; border: 1px solid #e3ebf6; font-size: 13px; color: #1f3a5f; font-weight: 600; }
+        .auto-sync-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: #2a7de1; }
+        @media (max-width: 700px) {
+            .container { padding: 15px; }
+            .filter-area { flex-direction: column; align-items: stretch; }
+            .filter-actions { margin-left: 0; }
+            .footer-bar { flex-direction: column; align-items: stretch; }
+            .btn-group { justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📋 Daftar Hadir UAS <small>Pengawas Ruangan</small></h1>
+    <div id="syncStatus" class="sync-status offline">
+        <div class="sync-indicator"></div>
+        <span id="syncStatusText">Offline - Menunggu koneksi spreadsheet</span>
+    </div>
+    <div class="filter-area">
+        <div class="filter-group">
+            <label for="prodiSelect">Program Studi</label>
+            <select id="prodiSelect">
+                <option value="">-- Pilih --</option>
+                <option value="S1 Keperawatan">S1 Keperawatan</option>
+                <option value="D3 Keperawatan">D3 Keperawatan</option>
+                <option value="S1 Farmasi">S1 Farmasi</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="semesterSelect">Semester</label>
+            <select id="semesterSelect">
+                <option value="">-- Pilih --</option>
+                <option value="2">Semester 2</option>
+                <option value="4">Semester 4</option>
+                <option value="6">Semester 6</option>
+                <option value="8">Semester 8</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="mkInput">Mata Kuliah</label>
+            <input type="text" id="mkInput" placeholder="Contoh: Keperawatan Dasar">
+        </div>
+        <div class="filter-group">
+            <label for="ruangInput">Ruang Ujian</label>
+            <input type="text" id="ruangInput" placeholder="Contoh: A.301">
+        </div>
+        <div class="filter-group">
+            <label for="pengawasInput">Nama Pengawas</label>
+            <input type="text" id="pengawasInput" placeholder="Nama lengkap">
+        </div>
+        <div class="filter-actions">
+            <button id="btnTampilkan" class="primary">Tampilkan</button>
+        </div>
+    </div>
+    <div class="table-wrap" id="tableWrap">
+        <div class="empty-state"><span>📄</span><p>Pilih Program Studi dan Semester, lalu klik Tampilkan.</p></div>
+    </div>
+    <div class="footer-bar" id="footerBar" style="display: none;">
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+            <div class="info-badge" id="infoBadge">Total: 0 mahasiswa</div>
+            <div class="auto-sync-toggle">
+                <input type="checkbox" id="autoSyncToggle" checked>
+                <label for="autoSyncToggle">Auto-Sync ke Spreadsheet</label>
+            </div>
+        </div>
+        <div class="btn-group">
+            <button class="btn-mark-all" id="btnMarkAllHadir">✅ Hadir</button>
+            <button class="btn-mark-all" id="btnMarkAllTidak">❌ Tidak</button>
+            <button class="btn-reset" id="btnResetStatus">↺ Reset</button>
+            <button class="btn-sync" id="btnSyncNow">🔄 Sync Sekarang</button>
+            <button class="btn-export" id="btnExport">⬇️ Ekspor Excel</button>
+        </div>
+    </div>
+    <div class="message" id="message"></div>
+</div>
+<script>
+    // ==================== KONFIGURASI GOOGLE APPS SCRIPT ====================
+    const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx9HPXl8b0uiaQcVHSptfbeKDFd2uukDh2Lak6_J_iBuuADo2dyaQ1674bqRNNOJt4j7w/exec';
+
+    // ==================== DATA MAHASISWA ====================
+    const allMahasiswa = [];
+    function tambah(prodi, semester, dataRows) {
+        dataRows.forEach(row => {
+            allMahasiswa.push({ prodi: prodi, semester: semester, nim: row.nim, nama: row.nama, gender: row.gender, kelas: row.kelas });
+        });
+    }
+
+    const s1tk1 = [
+        { nim: "25021220029", nama: "Adinda Apriliani Putri", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220020", nama: "Ananda Agustin", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220016", nama: "Anggun Apriyanti", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220012", nama: "Aninda Nur Khoiriyah", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220025", nama: "Anindya Assifa Tanjung", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220008", nama: "Bagas Dwi Juniawan", gender: "L", kelas: "A 1.1" },
+        { nim: "25021220006", nama: "Bunga Isma Effendi", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220007", nama: "Cahaya Herda Loviana", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220030", nama: "Calista Indi Rahmadani", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220010", nama: "Daviona Rafeyfa Nugroho", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220013", nama: "Gelar Putra Pamungkas", gender: "L", kelas: "A 1.1" },
+        { nim: "25021220026", nama: "Leisya Ramadhania Setiawan Putri", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220021", nama: "Muhammad Adi Robi Khoerudin", gender: "L", kelas: "A 1.1" },
+        { nim: "25021220001", nama: "Muhammad Fajri Ramadhan", gender: "L", kelas: "A 1.1" },
+        { nim: "25021220027", nama: "Muhammad Faqih Alfariji", gender: "L", kelas: "A 1.1" },
+        { nim: "25021220017", nama: "Nayshilla Ananda Ardiansyah", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220004", nama: "Nazwatul Rosidah Abidin", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220023", nama: "Neng Hartati", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220002", nama: "Nur Khomariyah", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220014", nama: "Rahma Dinda Bestari", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220019", nama: "Rahmatina Kamila Putri", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220009", nama: "Rasya Ramdani", gender: "L", kelas: "A 1.1" },
+        { nim: "25021220015", nama: "Sella Puji Lestari", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220024", nama: "Setia Ramadhani", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220003", nama: "Siti Aisyah", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220022", nama: "Suci Lutfiatun Najwa", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220018", nama: "Vania Yaafiah Atsil", gender: "P", kelas: "A 1.1" },
+        { nim: "25021220028", nama: "Zahara Fitria Ramadhani", gender: "P", kelas: "A 1.1" }
+    ];
+    tambah("S1 Keperawatan", 2, s1tk1);
+
+    const s1tk2 = [
+        { nim: "24021220010", nama: "Adila Khairunnisa", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220011", nama: "Adiva Faza Aulia Putri", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220012", nama: "Ahmad Atthoriq Azhari", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220013", nama: "Ahmad Maftuh Luthfi Raihan", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220014", nama: "Alya Safitri", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220244", nama: "Azriani Rahma Puri", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220015", nama: "Azzahra Safira Maulida", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220016", nama: "Bima Ardi Prasetya", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220017", nama: "Bunga Aprilia", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220018", nama: "Charissa Cahya Kamila", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220019", nama: "Darratu Tasbita", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220020", nama: "Denisa Depianti", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220289", nama: "Dwi Oktafia", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220021", nama: "Dya Shiva Aulya", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220022", nama: "Feby Salsabela", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220023", nama: "Fepy Dwi Ariyanti", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220024", nama: "Ghina Rofifah Nur Adilah", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220025", nama: "Heru Diansyah", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220027", nama: "Intan Rahma Lutfiana", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220306", nama: "Kayla Shavira Malingkas", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220028", nama: "Krisna Aditiya Widjaya", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220030", nama: "Mahira Zulfa Ramdhina", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220031", nama: "Moch Chaerul Anwar Al-Anshory", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220032", nama: "Muhammad Fathurrahman Pratama", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220033", nama: "Muhammad Juliansyach Saputra", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220034", nama: "Nabila Khoirun Nisa", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220035", nama: "Natasya Bilqis Mustari", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220036", nama: "Niken Syahirah", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220037", nama: "Nur Hanifa Hemalzi", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220284", nama: "Nurul Hikmah", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220039", nama: "R. Tsasa Afia Maharani Hasyim", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220040", nama: "Rifaul Wahidah", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220041", nama: "Sabrina Apriliyani", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220042", nama: "Salvia Fauztina", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220243", nama: "Satrio Abimanyu", gender: "L", kelas: "A 3.7" },
+        { nim: "24021220043", nama: "Siti Nihayah", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220045", nama: "Syahla Anindita Chelsea", gender: "P", kelas: "A 3.7" },
+        { nim: "24021220047", nama: "Wanda Azahrany", gender: "P", kelas: "A 3.7" },
+        { nim: "25022220001", nama: "Anisa Nur Fadlilah", gender: "P", kelas: "A 3.7" },
+        { nim: "25022220002", nama: "Lisa Ariska", gender: "P", kelas: "A 3.7" }
+    ];
+    tambah("S1 Keperawatan", 4, s1tk2);
+
+    const s1tk3 = [
+        { nim: "2302122220201", nama: "Alfira Nurmala", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220196", nama: "Alma Ahsanti Virgienianto", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220192", nama: "Anisa Azzahra", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220198", nama: "Azzam Mishbahuddin", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220181", nama: "Betty Nurkumarawati", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220210", nama: "Chechilia Rahma Anggita", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220088", nama: "Cindi Shania", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220189", nama: "Cindy Mentari", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220200", nama: "Dani Ismanto", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220215", nama: "Dea Oktaviani", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220178", nama: "Deswita Rebecca Lestari Br Siahaan", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220202", nama: "Dieta Agustin Ependi", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220227", nama: "Dila Septiyani Putri", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220203", nama: "Dwi Nisa Anggraini", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220187", nama: "Fahmi Sidqi", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220190", nama: "Farhan Bintang Pangestu", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220184", nama: "Isna Zahrotun Afifah", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220207", nama: "Khairunnisa", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220228", nama: "Maryam Dewi Hapsari", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220389", nama: "Maria Amanda Yasmine", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220176", nama: "Muhammad Fajar Abdullah Bajambi", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220224", nama: "Muhammad Naupal Aidil Fitroh", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220191", nama: "Muhammad Rafi Aqmar", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220214", nama: "Nabila Fatika Sari", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220345", nama: "Nadzifah Salsabila Wahid", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220087", nama: "Nauri Mahfuji", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220199", nama: "Navisyah Ilmi Nia", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220195", nama: "Nelisa", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220194", nama: "Nida Dwi Pratiwi", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220217", nama: "Niken Ratri Lianawati", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220186", nama: "Nur Halimah", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220177", nama: "Rafli Ilham Apriansyah", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220183", nama: "Raihana Salsabila Yumna", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220197", nama: "Regita Febiyola", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220175", nama: "Ria Atika", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220213", nama: "Riska Andriyani", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220182", nama: "Rizqo Akbar Utomo", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220204", nama: "Salsabila Noor Syabani", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220222", nama: "Salsabila Putri Ramandhita", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220225", nama: "Sheilla Nabitha Hidayat", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220216", nama: "Siti Hilmi Wasiko", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220188", nama: "Siti Hoiryah", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220205", nama: "Siti Rofiana", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220185", nama: "Sofri Budiyansyah", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220174", nama: "Sri Ayu Widiastuti", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220209", nama: "Sri Wahyuni", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220212", nama: "Talia Putri Wardana", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220193", nama: "Tenri Bungawalie", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220221", nama: "Tiara Imelda Al-Zikra", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220208", nama: "Ubaydillah", gender: "L", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220179", nama: "Wardah Arnita", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220338", nama: "Zahwa Aprilia", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "2302122220211", nama: "Zia Aulia", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "24022220308", nama: "Ika Widia Sari", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "0432950322079", nama: "Winilah", gender: "P", kelas: "A 2.1 - 2.2" },
+        { nim: "432950322025", nama: "Intan Permata Sari", gender: "P", kelas: "A 2.1 - 2.2" }
+    ];
+    tambah("S1 Keperawatan", 6, s1tk3);
+
+    const d3tk1 = [
+        { nim: "25021210001", nama: "ALIFAH PUTRI RAMADHANI", gender: "P", kelas: "A 3.4" },
+        { nim: "25021210002", nama: "KAMILA WIDIASTUTI CASIA PUTRI", gender: "P", kelas: "A 3.4" },
+        { nim: "25021210003", nama: "RAISAH RAHMAWATI", gender: "P", kelas: "A 3.4" },
+        { nim: "25021210004", nama: "NURISTA AULIA", gender: "P", kelas: "A 3.4" },
+        { nim: "25021210005", nama: "SYALWA AFRIANI HAMSIS", gender: "P", kelas: "A 3.4" }
+    ];
+    tambah("D3 Keperawatan", 2, d3tk1);
+
+    const d3tk2 = [
+        { nim: "24021210048", nama: "ADINDA ALILA SHOLEHA", gender: "P", kelas: "A 3.4" },
+        { nim: "24021210049", nama: "BINTANG AR FAJAR", gender: "L", kelas: "A 3.4" },
+        { nim: "24021210050", nama: "ELVARETTA SUHARA", gender: "P", kelas: "A 3.4" },
+        { nim: "24021210051", nama: "M. AZLAN SAYYID ALAYYUBI", gender: "L", kelas: "A 3.4" },
+        { nim: "24021210052", nama: "MUHAMMAD SYAHRUDIN", gender: "L", kelas: "A 3.4" },
+        { nim: "24021210053", nama: "MULYA DINAR SALSABILA", gender: "P", kelas: "A 3.4" },
+        { nim: "24021210054", nama: "SAWIYAH FITRIYAH", gender: "P", kelas: "A 3.4" },
+        { nim: "24021210055", nama: "TIARA NURFADILAH", gender: "P", kelas: "A 3.4" }
+    ];
+    tambah("D3 Keperawatan", 4, d3tk2);
+
+    const d3tk3 = [
+        { nim: "2302121210284", nama: "Alfiana Agustin", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210281", nama: "Anisah Eka Prasetya", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210277", nama: "Ardi Wiranata Kusnadi", gender: "L", kelas: "A 3.5" },
+        { nim: "2302121210351", nama: "Dania Nasywa Putri", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210279", nama: "Dyah Ayu Ratri Linggarjati", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210276", nama: "Elisa Wahyuningsih", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210286", nama: "Jesica Aulia Jalva", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210278", nama: "Kayla Annisardi Azzahra", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210274", nama: "Naila Azzah Rosidah", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210272", nama: "Nur Mutia Fauziyah", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210275", nama: "Ridha Fauziyah", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210280", nama: "Savira Hidayanti", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210282", nama: "Siti Hajjah", gender: "P", kelas: "A 3.5" },
+        { nim: "2302121210283", nama: "Siti Rokhmatun Nurkhasanah", gender: "P", kelas: "A 3.5" }
+    ];
+    tambah("D3 Keperawatan", 6, d3tk3);
+
+    const farmasi1 = [
+        { nim: "25021240008", nama: "Abwa Atbara Fathir Shidiq", gender: "L", kelas: "A 3.3" },
+        { nim: "25021240005", nama: "Adienta Hanna Afsari", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240001", nama: "Ahmad Haidar Fahmy", gender: "L", kelas: "A 3.3" },
+        { nim: "25021240010", nama: "Anisha Mayshela Rizqiyah", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240006", nama: "Aulia Rahman", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240003", nama: "Fatimah Hamzani", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240007", nama: "Kesya Arta Mevia", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240011", nama: "M Danar Firdaus", gender: "L", kelas: "A 3.3" },
+        { nim: "25021240002", nama: "Qanitah Aulia Cahyani", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240004", nama: "Rahmah Azizah", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240009", nama: "Raisyah Agustin Nuraini", gender: "P", kelas: "A 3.3" },
+        { nim: "25021240012", nama: "Saskia Nabila", gender: "P", kelas: "A 3.3" }
+    ];
+    tambah("S1 Farmasi", 2, farmasi1);
+
+    const farmasi2 = [
+        { nim: "24021240275", nama: "Arfi Faiza Maruf", gender: "L", kelas: "A 3.3" },
+        { nim: "24021240001", nama: "Desta Rika Ardita", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240002", nama: "Desti Nur IlLahi Prasti Kawati", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240004", nama: "Marissa Nurul Medina", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240005", nama: "Muhammad Fikriansyah", gender: "L", kelas: "A 3.3" },
+        { nim: "24021240006", nama: "Nurulliyah Herawati", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240007", nama: "Rajul Faiyyad Hulu", gender: "L", kelas: "A 3.3" },
+        { nim: "24021240008", nama: "Rifani Adzero Adzani", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240287", nama: "Roland Sister Pakpahan", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240199", nama: "Titin Mutiara", gender: "P", kelas: "A 3.3" },
+        { nim: "24021240009", nama: "Zahra Alya Al Muftikhah", gender: "P", kelas: "A 3.3" }
+    ];
+    tambah("S1 Farmasi", 4, farmasi2);
+
+    const farmasi3 = [
+        { nim: "2302124240258", nama: "Arisca Wanda Ramadhani", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240241", nama: "Aulia Balqis", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240243", nama: "Cinta Ramadhani Hidayat", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240268", nama: "Dasem Dwi Rapih", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240260", nama: "Destiana Huriyah", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240259", nama: "Dinda", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240271", nama: "Eka Puja Lestari", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240270", nama: "Fajar Ramdhani", gender: "L", kelas: "A 3.2" },
+        { nim: "2302124240244", nama: "Friska Octavia", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240242", nama: "Irna Padilah Ritonga", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240262", nama: "Kevin Arya Putra Perdana", gender: "L", kelas: "A 3.2" },
+        { nim: "2302124240269", nama: "Najwa Nur Alya Putri", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240256", nama: "Nur Aini", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240266", nama: "Putri Lia Permatasari", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240254", nama: "Qonita Rahmania", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240261", nama: "Rika Astuti", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240253", nama: "Rizka Ramadhina", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240251", nama: "Rizma Yogi Putri Wiyadi", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240252", nama: "Salma Farras Siswanto", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240267", nama: "Salsa Nur Sabila Dinda Ananta", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240245", nama: "Sopiah Dwi Lestari", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240265", nama: "Violeta Andre Yana", gender: "P", kelas: "A 3.2" },
+        { nim: "2302124240257", nama: "Yuni Dwi Astuti", gender: "P", kelas: "A 3.2" }
+    ];
+    tambah("S1 Farmasi", 6, farmasi3);
+
+    const farmasi4 = [
+        { nim: "432950722018", nama: "Abdullah Dwi Ariesandi", gender: "L", kelas: "A 3.1" },
+        { nim: "432950722012", nama: "Akmalia", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722003", nama: "Alya Nabilla Putri", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722009", nama: "Astri Nurhartanti", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722004", nama: "Citra Puspa Sakinah", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722049", nama: "Dhita Lolita Nurfirizki Chelsy", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722013", nama: "Frida Devitasari Tasiba", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722007", nama: "Ika Damayanti", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722047", nama: "Intan", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722017", nama: "Jihan Auliya Listiyani", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722002", nama: "Julya Sari Marbun", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722001", nama: "Kania Agustin", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722048", nama: "Kanza Amalia", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722010", nama: "Lulu Khoirriyah Daffa", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722045", nama: "Nisaul Fitria Isnaini", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722046", nama: "Novelia Aulia Putri", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722014", nama: "Riesmala Septa Murni", gender: "P", kelas: "A 3.1" },
+        { nim: "0432950722050", nama: "Salma Nabiela Azazzahra", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722051", nama: "Salsabila Putri Kirani", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722008", nama: "Sekar Ayu Ramadhani", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722011", nama: "Sintia Hamidah", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722005", nama: "Tian Oktaviani", gender: "P", kelas: "A 3.1" },
+        { nim: "432950722006", nama: "Vivi Aliyatuzzahwa", gender: "P", kelas: "A 3.1" },
+        { nim: "24022240330", nama: "Najla Briliani Salmeitra", gender: "P", kelas: "A 3.1" }
+    ];
+    tambah("S1 Farmasi", 8, farmasi4);
+
+    // ==================== DOM & STATE ====================
+    const prodiSelect = document.getElementById('prodiSelect');
+    const semesterSelect = document.getElementById('semesterSelect');
+    const mkInput = document.getElementById('mkInput');
+    const ruangInput = document.getElementById('ruangInput');
+    const pengawasInput = document.getElementById('pengawasInput');
+    const btnTampilkan = document.getElementById('btnTampilkan');
+    const tableWrap = document.getElementById('tableWrap');
+    const footerBar = document.getElementById('footerBar');
+    const infoBadge = document.getElementById('infoBadge');
+    const messageDiv = document.getElementById('message');
+    const btnMarkAllHadir = document.getElementById('btnMarkAllHadir');
+    const btnMarkAllTidak = document.getElementById('btnMarkAllTidak');
+    const btnResetStatus = document.getElementById('btnResetStatus');
+    const btnExport = document.getElementById('btnExport');
+    const btnSyncNow = document.getElementById('btnSyncNow');
+    const autoSyncToggle = document.getElementById('autoSyncToggle');
+    const syncStatus = document.getElementById('syncStatus');
+    const syncStatusText = document.getElementById('syncStatusText');
+
+    let currentDisplayData = [];
+    let autoSyncInterval = null;
+    let syncTimeout = null;
+
+    // ==================== SYNC FUNCTIONS ====================
+    function updateSyncStatus(status, text) {
+        syncStatus.className = 'sync-status ' + status;
+        syncStatusText.textContent = text;
+    }
+
+    async function syncToSpreadsheet(data) {
+        if (!GAS_WEB_APP_URL) {
+            updateSyncStatus('offline', 'URL Apps Script belum dikonfigurasi');
+            return false;
+        }
+
+        updateSyncStatus('syncing', 'Sedang sinkronisasi...');
+        btnSyncNow.disabled = true;
+
+        const payload = {
+            action: 'syncAttendance',
+            prodi: prodiSelect.value,
+            semester: semesterSelect.value,
+            mataKuliah: mkInput.value.trim() || '-',
+            ruang: ruangInput.value.trim() || '-',
+            pengawas: pengawasInput.value.trim() || '-',
+            timestamp: new Date().toISOString(),
+            data: data.map(row => ({
+                nim: row.nim,
+                nama: row.nama,
+                gender: row.gender,
+                kelas: row.kelas,
+                kehadiran: row._kehadiran || '',
+                catatan: row._catatan || ''
+            }))
+        };
+
+        try {
+            await fetch(GAS_WEB_APP_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            updateSyncStatus('online', '✅ Tersinkron dengan Spreadsheet');
+            showMessage('✅ Data berhasil disinkronkan ke Google Spreadsheet!');
+
+            document.querySelectorAll('tbody tr').forEach(tr => {
+                tr.classList.add('synced');
+                tr.classList.remove('sync-pending');
+            });
+            return true;
+        } catch (error) {
+            console.error('Sync error:', error);
+            updateSyncStatus('offline', '❌ Gagal sync: Periksa koneksi');
+            showMessage('❌ Gagal sinkronisasi. Data tetap tersimpan lokal.', true);
+            return false;
+        } finally {
+            btnSyncNow.disabled = false;
+        }
+    }
+
+    function queueSync() {
+        if (!autoSyncToggle.checked) return;
+        document.querySelectorAll('tbody tr').forEach(tr => {
+            if (!tr.classList.contains('synced')) tr.classList.add('sync-pending');
+        });
+        clearTimeout(syncTimeout);
+        syncTimeout = setTimeout(() => {
+            if (currentDisplayData.length > 0) syncToSpreadsheet(currentDisplayData);
+        }, 2000);
+    }
+
+    function startAutoSync() {
+        if (autoSyncInterval) clearInterval(autoSyncInterval);
+        autoSyncInterval = setInterval(() => {
+            if (autoSyncToggle.checked && currentDisplayData.length > 0) {
+                const hasChanges = currentDisplayData.some(row => row._kehadiran || row._catatan);
+                if (hasChanges) syncToSpreadsheet(currentDisplayData);
+            }
+        }, 30000);
+    }
+
+    function stopAutoSync() {
+        if (autoSyncInterval) { clearInterval(autoSyncInterval); autoSyncInterval = null; }
+    }
+
+    // ==================== UI FUNCTIONS ====================
+    function showMessage(text, isError) {
+        messageDiv.textContent = text;
+        messageDiv.style.background = isError ? '#fde8e8' : '#dff0fa';
+        messageDiv.style.color = isError ? '#7a2e2e' : '#1a3a5f';
+        messageDiv.classList.add('show');
+        setTimeout(() => messageDiv.classList.remove('show'), 5000);
+    }
+
+    function clearMessage() { messageDiv.classList.remove('show'); }
+
+    function renderTable(data) {
+        if (!data || data.length === 0) {
+            tableWrap.innerHTML = '<div class="empty-state"><span>📭</span><p>Tidak ada mahasiswa untuk filter ini.</p></div>';
+            footerBar.style.display = 'none';
+            return;
+        }
+
+        let html = '<table><thead><tr><th class="col-no">No</th><th class="col-nim">NIM</th><th class="col-nama">Nama</th><th class="col-gender">L/P</th><th class="col-kelas">Kelas</th><th class="col-hadir">Kehadiran</th><th class="col-catatan">Catatan</th></tr></thead><tbody>';
+
+        data.forEach((row, idx) => {
+            const hadirVal = row._kehadiran || '';
+            const catatanVal = row._catatan || '';
+            html += '<tr><td class="col-no">' + (idx + 1) + '</td><td class="col-nim"><strong>' + row.nim + '</strong></td><td class="col-nama">' + row.nama + '</td><td class="col-gender">' + row.gender + '</td><td class="col-kelas">' + row.kelas + '</td><td class="col-hadir"><select class="status" data-index="' + idx + '" data-field="kehadiran"><option value="">-- Pilih --</option><option value="Hadir"' + (hadirVal === 'Hadir' ? ' selected' : '') + '>Hadir</option><option value="Tidak Hadir"' + (hadirVal === 'Tidak Hadir' ? ' selected' : '') + '>Tidak Hadir</option><option value="Izin"' + (hadirVal === 'Izin' ? ' selected' : '') + '>Izin</option><option value="Sakit"' + (hadirVal === 'Sakit' ? ' selected' : '') + '>Sakit</option></select></td><td class="col-catatan"><input class="catatan" type="text" placeholder="Catatan (opsional)" data-index="' + idx + '" data-field="catatan" value="' + catatanVal + '"></td></tr>';
+        });
+
+        html += '</tbody></table>';
+        tableWrap.innerHTML = html;
+        footerBar.style.display = 'flex';
+        infoBadge.textContent = 'Total: ' + data.length + ' mahasiswa';
+
+        document.querySelectorAll('.status').forEach(sel => {
+            sel.addEventListener('change', function() {
+                const idx = parseInt(this.dataset.index);
+                if (!isNaN(idx) && currentDisplayData[idx]) {
+                    currentDisplayData[idx]._kehadiran = this.value;
+                    queueSync();
+                }
+            });
+        });
+
+        document.querySelectorAll('.catatan').forEach(inp => {
+            inp.addEventListener('input', function() {
+                const idx = parseInt(this.dataset.index);
+                if (!isNaN(idx) && currentDisplayData[idx]) {
+                    currentDisplayData[idx]._catatan = this.value;
+                    queueSync();
+                }
+            });
+        });
+    }
+
+    function tampilkanData() {
+        clearMessage();
+        const prodi = prodiSelect.value;
+        const semester = parseInt(semesterSelect.value);
+
+        if (!prodi || !semester) {
+            showMessage('Harap pilih Program Studi dan Semester.', true);
+            tableWrap.innerHTML = '<div class="empty-state"><span>⚠️</span><p>Pilih Program Studi dan Semester, lalu klik Tampilkan.</p></div>';
+            footerBar.style.display = 'none';
+            currentDisplayData = [];
+            return;
+        }
+
+        const filtered = allMahasiswa.filter(m => m.prodi === prodi && m.semester === semester);
+        if (filtered.length === 0) {
+            showMessage('Tidak ada data untuk kombinasi ini.', true);
+            tableWrap.innerHTML = '<div class="empty-state"><span>📭</span><p>Data tidak ditemukan.</p></div>';
+            footerBar.style.display = 'none';
+            currentDisplayData = [];
+            return;
+        }
+
+        currentDisplayData = filtered.map(m => ({ ...m, _kehadiran: '', _catatan: '' }));
+        renderTable(currentDisplayData);
+        showMessage('Menampilkan ' + currentDisplayData.length + ' mahasiswa untuk ' + prodi + ' - Semester ' + semester);
+        startAutoSync();
+    }
+
+    btnTampilkan.addEventListener('click', tampilkanData);
+
+    function markAll(status) {
+        if (!currentDisplayData || currentDisplayData.length === 0) {
+            showMessage('Tidak ada data yang ditampilkan.', true);
+            return;
+        }
+        currentDisplayData.forEach(row => row._kehadiran = status);
+        renderTable(currentDisplayData);
+        showMessage('✅ Semua mahasiswa ditandai "' + status + '"');
+        queueSync();
+    }
+
+    btnMarkAllHadir.addEventListener('click', () => markAll('Hadir'));
+    btnMarkAllTidak.addEventListener('click', () => markAll('Tidak Hadir'));
+
+    btnResetStatus.addEventListener('click', function() {
+        if (!currentDisplayData || currentDisplayData.length === 0) {
+            showMessage('Tidak ada data.', true);
+            return;
+        }
+        currentDisplayData.forEach(row => { row._kehadiran = ''; row._catatan = ''; });
+        renderTable(currentDisplayData);
+        showMessage('↺ Status dan catatan direset');
+        queueSync();
+    });
+
+    btnSyncNow.addEventListener('click', function() {
+        if (!currentDisplayData || currentDisplayData.length === 0) {
+            showMessage('Tidak ada data untuk disinkronkan.', true);
+            return;
+        }
+        syncToSpreadsheet(currentDisplayData);
+    });
+
+    autoSyncToggle.addEventListener('change', function() {
+        if (this.checked) { startAutoSync(); showMessage('✅ Auto-Sync diaktifkan'); }
+        else { stopAutoSync(); showMessage('⏸️ Auto-Sync dinonaktifkan'); }
+    });
+
+    btnExport.addEventListener('click', function() {
+        if (!currentDisplayData || currentDisplayData.length === 0) {
+            showMessage('Tidak ada data untuk diekspor.', true);
+            return;
+        }
+
+        const ruang = ruangInput.value.trim() || '-';
+        const pengawas = pengawasInput.value.trim() || '-';
+        const mataKuliah = mkInput.value.trim() || '-';
+
+        const rows = [
+            ['Mata Kuliah: ' + mataKuliah],
+            ['Ruang Ujian: ' + ruang],
+            ['Pengawas: ' + pengawas],
+            [],
+            ['No', 'NIM', 'Nama', 'L/P', 'Kelas', 'Kehadiran', 'Catatan']
+        ];
+
+        currentDisplayData.forEach((row, idx) => {
+            rows.push([(idx + 1).toString(), row.nim, row.nama, row.gender, row.kelas, row._kehadiran || '', row._catatan || '']);
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, 'Daftar Hadir');
+        const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbout], { type: 'application/octet-stream' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'Daftar_Hadir_UAS_' + prodiSelect.value + '_Sem' + semesterSelect.value + '_' + new Date().toISOString().slice(0,10) + '.xlsx';
+        link.click();
+        URL.revokeObjectURL(link.href);
+        showMessage('✅ File berhasil diekspor!');
+    });
+
+    console.log('Aplikasi Daftar Hadir UAS dengan Sync Spreadsheet siap.');
+</script>
+</body>
+</html>
